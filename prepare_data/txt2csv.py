@@ -1,14 +1,14 @@
 import pandas as pd
 import os
-#将txt文件转成csv文件
+# Convert txt files to csv files
 
 data_path = '../ChineseLyrics'
 
 
 def get_csv(file):
-    df = pd.read_csv(file,delimiter=";",names=['src','tgt'])  #‘;’是分隔符
+    df = pd.read_csv(file,delimiter=";",names=['src','tgt'])  # ';' is the delimiter
     # df.columns = ['id','file','text']
-    # encoding='utf_8_sig'解决存储csv的乱码问题
+    # encoding='utf_8_sig' prevents garbled characters when saving CSV
     df.to_csv(f"{file}.csv", encoding='utf_8_sig', index=False)
     return 
 

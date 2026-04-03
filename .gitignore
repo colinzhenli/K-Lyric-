@@ -1,1 +1,4 @@
 .venv/
+checkpoints/
+logs/
+歌词生成说明文档.docx

@@ -1,22 +1,26 @@
-from transformers import MT5Tokenizer, MT5ForConditionalGeneration
+import os
+import re
 import torch
 import argparse
 import csv
-import re
+from transformers import MT5Tokenizer, MT5ForConditionalGeneration
 
-test_path = '/aliyun-06/share_v2/yangshiping/projects/lyric_generation/ChineseLyrics/test.txt.csv'
-save_path = '/aliyun-06/share_v2/yangshiping/projects/lyric_generation/test_result/case.txt'
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+test_path = os.path.join(BASE_DIR, 'ChineseLyrics', 'test.txt.csv')
+save_path = os.path.join(BASE_DIR, 'test_result', 'case.txt')
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 def generate_sentence(input, model, tokenizer):
     model.eval()                 
-    input_ids = tokenizer.encode(input, return_tensors="pt").to('cuda')  
+    input_ids = tokenizer.encode(input, return_tensors="pt").to(device)  
     outputs = model.generate(input_ids=input_ids,num_beams=20, max_length=128, repetition_penalty=10.0)
     output_str = tokenizer.decode(outputs.reshape(-1), skip_special_tokens=False)
     return output_str
 
 def args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_path", type=str, default='/aliyun-06/share_v2/yangshiping/projects/lyric_checkpoints/checkpoint-222807')
+    parser.add_argument("--model_path", type=str, default=os.path.join(BASE_DIR, 'checkpoints'))
     parser.add_argument("--model_name", type=str, default='mt5')
     args = parser.parse_args()
     return args
@@ -24,14 +28,14 @@ def args():
 def load_test_data(path):
     with open(path,'r') as csvfile:
         reader = csv.DictReader(csvfile)
-        src_list = [row['\ufeffsrc'] for row in reader]   # src部分的关键词数据
+        src_list = [row['\ufeffsrc'] for row in reader]   # Keyword data from the src column
     return  src_list
 
 
 if __name__ == '__main__':
     args = args()
     if args.model_name == 'mt5':
-        model = MT5ForConditionalGeneration.from_pretrained(args.model_path).to('cuda')
+        model = MT5ForConditionalGeneration.from_pretrained(args.model_path).to(device)
         tokenizer = MT5Tokenizer.from_pretrained(args.model_path)
         
     task_prefix = 'trigger:'
@@ -39,8 +43,8 @@ if __name__ == '__main__':
     with open(save_path,"w") as w:
         for input in test_data:
             complete_input = task_prefix + input
-            mode = r'[^a-z<>0123456789_▁]+'                 #删掉特殊token
-            output = (generate_sentence(input,model,tokenizer))
+            mode = r'[^a-z<>0123456789_▁]+'                 # Remove special tokens
+            output = (generate_sentence(complete_input,model,tokenizer))
             mask_group = re.findall(mode,output)
             word_group = re.findall(mode,input)
             mask_group.remove(mask_group[0])

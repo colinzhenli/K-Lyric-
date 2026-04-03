@@ -11,16 +11,16 @@ def organazation_src_tgt(corpus_path,save_path):
             line = line.strip()
             sen = line
             label = 'haha'
-            random_num = random.randint(1,2)                #随机抽取关键字的数量
-            keywords = jieba.analyse.textrank(sen,topK=random_num)           #textrank的效果要更好
-            if len(keywords) == 0:              #未抽取到关键词
+            random_num = random.randint(1,2)                # Randomly choose the number of keywords to extract
+            keywords = jieba.analyse.textrank(sen,topK=random_num)           # TextRank works better than TF-IDF here
+            if len(keywords) == 0:              # No keywords extracted
                 continue
             true_order = []
             for keyword in keywords:
                 index = sen.find(keyword)
                 temp_tuple = (keyword,index)
                 true_order.append(temp_tuple)
-            true_order.sort(key = lambda elem:elem[1])      #将关键字顺序调整为按照原句顺序
+            true_order.sort(key = lambda elem:elem[1])      # Sort keywords by their original position in the sentence
             word_list = []
             for word,index in true_order:
                 word_list.append(word)

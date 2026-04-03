@@ -1,6 +1,5 @@
 import json
 import os
-from re import L 
 
 data_dir = '../ChineseLyrics'
 save_path = '../ChineseLyrics/lyrics.txt'
@@ -13,11 +12,11 @@ def json2txt(file_path):
             lyric = song['lyric']
             for sen in lyric:
                 flag = is_chinese_in(sen)                      
-                if flag and len(sen) >= 8 and len(sen) <= 20:  #限定长度剔除一些噪音
+                if flag and len(sen) >= 8 and len(sen) <= 20:  # Filter by length to remove noise
                     sen_list.append(sen)   
     return sen_list
 
-def is_chinese_in(sen):       #从歌词数据中清出中文歌词
+def is_chinese_in(sen):       # Filter Chinese lyrics from the song data
     for ch in sen:
         if '\u4e00' <= ch <= '\u9fff':
             return True

@@ -1,10 +1,12 @@
+import os
 import torch
 from transformers import BertTokenizer, GPT2LMHeadModel
 from torch.nn import CrossEntropyLoss
 from numpy import around
 
-test_result_path = '/aliyun-06/share_v2/yangshiping/projects/lyric_generation/test_result/case.txt'
-save_ppl_result = '/aliyun-06/share_v2/yangshiping/projects/lyric_generation/test_result/case_ppl.txt'
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+test_result_path = os.path.join(BASE_DIR, 'test_result', 'case.txt')
+save_ppl_result = os.path.join(BASE_DIR, 'test_result', 'case_ppl.txt')
 
 def list_split(items, n):
     return [items[i:i+n] for i in range(0, len(items), n)]
@@ -18,11 +20,13 @@ def get_test_result(path):
             sens_list.append(line)
     return sens_list
 
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
 def cal_ppl_bygpt2(sens):
     tokenizer = BertTokenizer.from_pretrained("uer/gpt2-chinese-cluecorpussmall")
-    model = GPT2LMHeadModel.from_pretrained("uer/gpt2-chinese-cluecorpussmall").to('cuda')
+    model = GPT2LMHeadModel.from_pretrained("uer/gpt2-chinese-cluecorpussmall").to(device)
     model.eval()
-    inputs = tokenizer(sens, padding='max_length', max_length=50, truncation=True, return_tensors="pt").to('cuda')
+    inputs = tokenizer(sens, padding='max_length', max_length=50, truncation=True, return_tensors="pt").to(device)
     bs, sl = inputs['input_ids'].size()
     outputs = model(**inputs, labels=inputs['input_ids'])
     logits = outputs[1]
