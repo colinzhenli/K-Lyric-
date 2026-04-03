@@ -56,7 +56,7 @@ def main(args):
     training_args = Seq2SeqTrainingArguments(                        
         output_dir=args.output_model_dir,
         overwrite_output_dir=True,
-        evaluation_strategy="epoch",
+        eval_strategy="epoch",
         learning_rate=args.lr,
         per_device_train_batch_size=args.batch_size_on_train,
         per_device_eval_batch_size=args.batch_size_on_eval,
