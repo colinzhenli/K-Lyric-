@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>K-Lyric: Keyword-Conditioned Chinese Lyric Generation</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Source+Sans+3:wght@300;400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #ffffff;
+  --surface: #f4f5f7;
+  --surface2: #eaecf0;
+  --accent: #b8860b;
+  --accent2: #996f0a;
+  --text: #2d2d2d;
+  --text-dim: #6b7280;
+  --text-bright: #111111;
+  --red: #d32f2f;
+  --green: #2e7d32;
+  --blue: #1565c0;
+  --purple: #7b1fa2;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'Source Sans 3', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+}
+
+.slide {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  padding: 40px 56px;
+  display: flex;
+  flex-direction: column;
+  opacity: 0;
+  transform: translateX(40px);
+  transition: opacity 0.45s ease, transform 0.45s ease;
+  pointer-events: none;
+  overflow-y: auto;
+  padding-bottom: 80px;
+}
+
+.slide.active {
+  opacity: 1;
+  transform: translateX(0);
+  pointer-events: all;
+}
+
+.slide.exiting {
+  opacity: 0;
+  transform: translateX(-40px);
+}
+
+/* Nav */
+.nav {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  z-index: 100;
+  background: var(--surface);
+  padding: 10px 20px;
+  border-radius: 40px;
+  border: 1px solid #ddd;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.nav button {
+  background: none;
+  border: 1px solid #ccc;
+  color: var(--accent);
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 16px;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.2s;
+}
+.nav button:hover { background: #f0e8d0; }
+.nav button:disabled { opacity: 0.3; cursor: not-allowed; }
+
+.nav .counter {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  color: var(--text-dim);
+  min-width: 50px;
+  text-align: center;
+}
+
+.dots { display: flex; gap: 6px; }
+.dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  opacity: 0.3;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+.dot.active { background: var(--accent); opacity: 1; transform: scale(1.3); }
+.dot:hover { opacity: 0.7; }
+
+/* Typography */
+h1 {
+  font-family: 'DM Serif Display', serif;
+  font-size: 52px;
+  color: var(--text-bright);
+  line-height: 1.15;
+  margin-bottom: 16px;
+}
+
+h2 {
+  font-family: 'DM Serif Display', serif;
+  font-size: 38px;
+  color: var(--accent);
+  margin-bottom: 20px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid #e0d5b0;
+}
+
+h3 {
+  font-family: 'Source Sans 3', sans-serif;
+  font-weight: 600;
+  font-size: 18px;
+  color: var(--accent2);
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+}
+
+p, li { font-size: 19px; line-height: 1.7; color: var(--text); }
+li { margin-bottom: 10px; }
+
+.label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  color: var(--accent);
+  margin-bottom: 12px;
+}
+
+.highlight { color: var(--accent); font-weight: 600; }
+.dim { color: var(--text-dim); }
+.red { color: var(--red); }
+.green { color: var(--green); }
+.blue { color: var(--blue); }
+
+/* Title slide */
+.title-slide {
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  background: radial-gradient(ellipse at 50% 40%, rgba(184,134,11,0.06) 0%, transparent 70%);
+}
+.title-slide h1 { font-size: 84px; margin-bottom: 28px; }
+.title-slide .subtitle {
+  font-size: 30px;
+  color: var(--text-dim);
+  font-weight: 300;
+  max-width: 850px;
+  line-height: 1.4;
+}
+.title-slide .meta {
+  margin-top: 48px;
+  font-size: 18px;
+  color: var(--text-dim);
+}
+
+/* Layout helpers */
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; flex: 1; align-content: start; }
+
+.card {
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 28px;
+  border: 1px solid #e0e0e0;
+}
+.card.accent-border { border-left: 3px solid var(--accent); }
+
+.example-box {
+  background: var(--surface);
+  border-radius: 10px;
+  padding: 22px 26px;
+  margin: 14px 0;
+  border: 1px solid #e0e0e0;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 16px;
+}
+.example-box .arrow { color: var(--accent); margin: 8px 0; font-size: 18px; }
+.example-box .input { color: var(--blue); }
+.example-box .output { color: var(--green); }
+.example-box .kw { color: var(--accent); font-weight: 700; }
+
+table { width: 100%; border-collapse: collapse; font-size: 16px; }
+th {
+  text-align: left; padding: 14px 16px;
+  background: var(--surface2);
+  color: var(--accent);
+  font-weight: 600;
+  border-bottom: 2px solid #e0d5b0;
+}
+td { padding: 12px 16px; border-bottom: 1px solid #eee; }
+tr:hover td { background: #faf6eb; }
+
+.pipeline {
+  display: flex; align-items: center; justify-content: center;
+  gap: 8px; margin: 24px 0; flex-wrap: wrap;
+}
+.pipeline-step {
+  background: var(--surface);
+  border: 1px solid #ddd;
+  border-radius: 10px;
+  padding: 18px 24px;
+  text-align: center;
+  min-width: 140px;
+}
+.pipeline-step .step-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px; color: var(--accent); margin-bottom: 6px;
+}
+.pipeline-step .step-name { font-size: 14px; font-weight: 600; color: var(--text-bright); }
+.pipeline-arrow { color: var(--accent); font-size: 22px; opacity: 0.6; }
+
+.stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin: 20px 0; }
+.stat-card {
+  background: var(--surface); border-radius: 10px; padding: 24px;
+  text-align: center; border: 1px solid #e0e0e0;
+}
+.stat-card .stat-num {
+  font-family: 'DM Serif Display', serif;
+  font-size: 40px; color: var(--accent); margin-bottom: 6px;
+}
+.stat-card .stat-label {
+  font-size: 13px; color: var(--text-dim);
+  text-transform: uppercase; letter-spacing: 1px;
+}
+
+.bar-chart { display: flex; flex-direction: column; gap: 8px; margin: 16px 0; }
+.bar-row { display: flex; align-items: center; gap: 12px; }
+.bar-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px; color: var(--text-dim);
+  min-width: 70px; text-align: right;
+}
+.bar-track { flex: 1; height: 28px; background: var(--surface); border-radius: 4px; overflow: hidden; }
+.bar-fill {
+  height: 100%; border-radius: 4px;
+  transition: width 0.8s ease;
+  display: flex; align-items: center; padding-left: 8px;
+  font-size: 11px; font-family: 'JetBrains Mono', monospace;
+  color: #fff; font-weight: 600;
+}
+
+.approach-diagram {
+  background: var(--surface); border-radius: 12px;
+  padding: 28px; margin: 16px 0;
+  border: 1px solid #e0e0e0;
+}
+.approach-row {
+  display: flex; align-items: center; gap: 16px;
+  margin: 0; padding: 14px 0;
+}
+.approach-row + .approach-row { border-top: 1px solid #eee; }
+.approach-tag {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;   color: #fff;
+  background: var(--accent);
+  padding: 3px 10px; border-radius: 4px;
+  font-weight: 600; min-width: 80px; text-align: center;
+}
+.approach-content { font-family: 'JetBrains Mono', monospace; font-size: 15px; }
+
+.token-a { color: var(--blue); font-weight: 700; }
+.token-b { color: var(--purple); font-weight: 700; }
+.token-c { color: var(--green); font-weight: 700; }
+.generated { color: var(--green); font-style: italic; }
+.fixed { color: var(--accent); font-weight: 700; }
+
+.compare-card {
+  background: var(--surface); border-radius: 10px; padding: 24px 28px; margin: 0;
+}
+.compare-card h4 { font-size: 19px; color: var(--text-bright); margin-bottom: 10px; }
+.compare-card p { font-size: 17px; margin: 6px 0; }
+.pro { color: var(--green); }
+.con { color: var(--red); }
+
+.key-insight {
+  background: linear-gradient(135deg, #fdf6e3, #faf8f0);
+  border: 1px solid #e0d5b0;
+  border-radius: 12px;
+  padding: 20px 24px;
+  margin: 16px 0;
+}
+.key-insight::before {
+  content: 'KEY INSIGHT';
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px; letter-spacing: 2px;
+  color: var(--accent); display: block; margin-bottom: 8px;
+}
+
+.slide-number {
+  position: absolute; top: 20px; right: 30px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px; color: var(--text-dim); opacity: 0.5;
+}
+
+ul { padding-left: 24px; }
+ul li { list-style: disc; }
+ul li::marker { color: var(--accent); }
+.ref { font-size: 16px; color: var(--text-dim); margin: 12px 0; line-height: 1.7; }
+.ref a { color: var(--blue); text-decoration: none; }
+.ref a:hover { text-decoration: underline; }
+
+code {
+  font-family: 'JetBrains Mono', monospace;
+  background: #eaecf0; padding: 2px 6px;
+  border-radius: 4px; font-size: 0.9em;
+}
+</style>
+</head>
+<body>
+
+<!-- ===== SLIDE 1: Title ===== -->
+<div class="slide title-slide active" data-idx="0">
+  <div class="label">NLP Course Project</div>
+  <h1>K-Lyric</h1>
+  <p class="subtitle">Keyword-Conditioned Chinese Lyric Generation</p>
+  <div style="margin-top:32px;font-size:20px;color:var(--text-bright);font-weight:600;">Eric Wang, Zhen Li</div>
+</div>
+
+<!-- ===== SLIDE 2: Problem ===== -->
+<div class="slide" data-idx="1">
+  <div class="slide-number">2 / 10</div>
+  <h2>Problem</h2>
+  <p style="font-size:22px; margin-bottom:24px;">How can we generate <span class="highlight">fluent, creative lyrics</span> that are <span class="highlight">guaranteed to contain</span> user-specified keywords?</p>
+
+  <div class="two-col">
+    <div>
+      <h3>Why It Matters</h3>
+      <ul>
+        <li>Songwriters often start from a few key concepts and need help expanding them into full lyric lines</li>
+        <li><strong>Lexically constrained generation</strong> is a fundamental NLP challenge &mdash; ensuring specific tokens appear in output while maintaining fluency</li>
+        <li>Applicable beyond lyrics: poetry, slogans, story writing with plot constraints</li>
+      </ul>
+    </div>
+    <div>
+      <h3>The Core Tension</h3>
+      <div class="card accent-border">
+        <p><span class="green">Fluency</span> &mdash; output should read like natural, coherent Chinese</p>
+      </div>
+      <div style="text-align:center;color:var(--red);font-size:24px;margin:8px 0;">vs.</div>
+      <div class="card accent-border">
+        <p><span class="blue">Keyword Fidelity</span> &mdash; every user-specified keyword <em>must</em> appear in the output</p>
+      </div>
+      <p class="dim" style="margin-top:20px;font-size:17px;">Standard language models optimize for fluency but provide no guarantee about keyword inclusion. Forcing keywords in often breaks fluency. We need a method that structurally guarantees both.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== SLIDE 3: Current Approaches & Limitations ===== -->
+<div class="slide" data-idx="2">
+  <div class="slide-number">3 / 10</div>
+  <h2>Current Approaches &amp; Limitations</h2>
+
+  <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 20px; flex:1;">
+    <div class="compare-card">
+      <h4>Unconstrained LMs <span class="dim">(GPT-2, etc.)</span></h4>
+      <p><span class="pro">+</span> Generates fluent text</p>
+      <p><span class="con">&minus;</span> No guarantee keywords appear in output</p>
+      <p><span class="con">&minus;</span> Must sample repeatedly and hope for inclusion</p>
+    </div>
+    <div class="compare-card">
+      <h4>Constrained Beam Search <span class="dim">(Hokamp &amp; Liu, 2017)</span></h4>
+      <p><span class="pro">+</span> Guarantees keyword presence</p>
+      <p><span class="con">&minus;</span> Hurts fluency by forcing tokens at arbitrary positions</p>
+      <p><span class="con">&minus;</span> Exponential complexity with more constraints</p>
+    </div>
+    <div class="compare-card">
+      <h4>BERT-style Infilling <span class="dim">(Donahue et al., 2020)</span></h4>
+      <p><span class="pro">+</span> Can fill around fixed tokens</p>
+      <p><span class="con">&minus;</span> Fixed output length (one [MASK] = one token)</p>
+      <p><span class="con">&minus;</span> Not designed for variable-length generation</p>
+    </div>
+    <div class="compare-card">
+      <h4>Template-based Methods</h4>
+      <p><span class="pro">+</span> Full control over structure</p>
+      <p><span class="con">&minus;</span> Rigid, unnatural phrasing</p>
+      <p><span class="con">&minus;</span> Requires hand-crafted templates per pattern</p>
+    </div>
+  </div>
+
+  <div class="key-insight" style="padding:24px 28px;font-size:19px;">
+    <p><strong>Our Insight:</strong> Frame keyword-conditioned generation as <span class="highlight">span infilling</span> &mdash; fix keywords in place and let the model fill in variable-length text around them. This naturally aligns with T5's pre-training objective (span corruption), giving us both keyword guarantees <em>and</em> fluency.</p>
+  </div>
+</div>
+
+<!-- ===== SLIDE 4: Data & Task ===== -->
+<div class="slide" data-idx="3">
+  <div class="slide-number">4 / 10</div>
+  <h2>Data &amp; Task</h2>
+
+  <div class="two-col">
+    <div>
+      <h3>Task Definition</h3>
+      <p style="margin-bottom:12px;"><strong>Input:</strong> 1&ndash;2 Chinese keywords<br>
+      <strong>Output:</strong> A fluent lyric line containing those exact keywords</p>
+
+      <div class="example-box">
+        <div class="input"><span class="kw">Keywords:</span> city, miss</div>
+        <div class="arrow">&darr;</div>
+        <div class="output"><span class="kw">Output:</span> "Missing you in this <strong>city</strong>"</div>
+      </div>
+      <div class="example-box">
+        <div class="input"><span class="kw">Keywords:</span> time, butterfly</div>
+        <div class="arrow">&darr;</div>
+        <div class="output"><span class="kw">Output:</span> "<strong>Time</strong> flies like a <strong>butterfly</strong>"</div>
+      </div>
+      <div class="example-box">
+        <div class="input"><span class="kw">Keywords:</span> control</div>
+        <div class="arrow">&darr;</div>
+        <div class="output"><span class="kw">Output:</span> "No one can <strong>control</strong> my heart"</div>
+      </div>
+    </div>
+    <div>
+      <h3>Dataset</h3>
+      <p class="dim" style="margin-bottom:12px;">Source: <a href="https://github.com/dengxiuqi/ChineseLyrics" style="color:var(--blue)">ChineseLyrics</a> (open-source corpus)</p>
+      <div class="stat-grid" style="grid-template-columns: 1fr 1fr;">
+        <div class="stat-card">
+          <div class="stat-num">983K</div>
+          <div class="stat-label">Train</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num">10K</div>
+          <div class="stat-label">Valid</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num">10K</div>
+          <div class="stat-label">Test</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num">1.96M</div>
+          <div class="stat-label">Raw Lines</div>
+        </div>
+      </div>
+
+      <table style="margin-top:12px;">
+        <tr><th>Property</th><th>Value</th></tr>
+        <tr><td>1-keyword / 2-keyword</td><td>51% / 49%</td></tr>
+        <tr><td>Avg lyric length</td><td>8.3 chars (range 8&ndash;20)</td></tr>
+        <tr><td>Keyword extraction</td><td>TextRank (jieba)</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ===== SLIDE 5: Data Construction ===== -->
+<div class="slide" data-idx="4">
+  <div class="slide-number">5 / 10</div>
+  <h2>Automatic Data Construction</h2>
+
+  <p style="margin-bottom:16px;">Training pairs are <em>automatically</em> constructed from raw lyrics &mdash; <span class="highlight">no human annotation needed</span>.</p>
+
+  <div class="pipeline">
+    <div class="pipeline-step">
+      <div class="step-label">Step 1</div>
+      <div class="step-name">Raw Lyrics<br><span style="font-size:11px;color:var(--text-dim);">1.96M lines</span></div>
+    </div>
+    <div class="pipeline-arrow">&rarr;</div>
+    <div class="pipeline-step">
+      <div class="step-label">Step 2</div>
+      <div class="step-name">TextRank<br>Keyword Extraction</div>
+    </div>
+    <div class="pipeline-arrow">&rarr;</div>
+    <div class="pipeline-step">
+      <div class="step-label">Step 3</div>
+      <div class="step-name">Segment<br>Encoding</div>
+    </div>
+    <div class="pipeline-arrow">&rarr;</div>
+    <div class="pipeline-step">
+      <div class="step-label">Step 4</div>
+      <div class="step-name">Source-Target<br>Pairs (1M)</div>
+    </div>
+  </div>
+
+  <div class="approach-diagram" style="margin-top:20px;">
+    <p style="margin-bottom:16px;font-weight:600;color:var(--text-bright);">Worked Example: "Missing you in this city" &nbsp;<span class="dim" style="font-weight:normal;font-size:13px;">(&#22312;&#36825;&#24231;&#22478;&#24066;&#24819;&#24565;&#20320;)</span></p>
+    <div class="approach-row">
+      <div class="approach-tag" style="background:var(--text-dim);">ORIGINAL</div>
+      <div class="approach-content">"In this <span class="fixed">city</span> <span class="fixed">miss</span> you" &nbsp;<span class="dim" style="font-size:12px;">&#22312;&#36825;&#24231;<span class="fixed">&#22478;&#24066;</span><span class="fixed">&#24819;&#24565;</span>&#20320;</span></div>
+    </div>
+    <div class="approach-row">
+      <div class="approach-tag" style="background:var(--blue);">EXTRACT</div>
+      <div class="approach-content">TextRank &rarr; keywords: <span class="fixed">city</span>, <span class="fixed">miss</span> &nbsp;<span class="dim" style="font-size:12px;">(&#22478;&#24066;, &#24819;&#24565;)</span></div>
+    </div>
+    <div class="approach-row">
+      <div class="approach-tag" style="background:var(--purple);">SOURCE</div>
+      <div class="approach-content"><span class="token-a">&lt;a&gt;</span><span class="fixed">city</span><span class="token-b">&lt;b&gt;</span><span class="fixed">miss</span><span class="token-c">&lt;c&gt;</span> &nbsp;<span class="dim" style="font-size:11px;">(&#22478;&#24066;, &#24819;&#24565;)</span></div>
+    </div>
+    <div class="approach-row">
+      <div class="approach-tag" style="background:var(--green);color:var(--bg);">TARGET</div>
+      <div class="approach-content"><span class="token-a">&lt;a&gt;</span><span class="generated">in this</span><span class="token-b">&lt;b&gt;</span><span class="generated"></span><span class="token-c">&lt;c&gt;</span><span class="generated">you</span> &nbsp;<span class="dim" style="font-size:11px;">(&#22312;&#36825;&#24231;, &#20320;)</span></div>
+    </div>
+  </div>
+  <p class="dim" style="font-size:15px;margin-top:12px;">Special tokens <span class="token-a">&lt;a&gt;</span> <span class="token-b">&lt;b&gt;</span> <span class="token-c">&lt;c&gt;</span> delimit segments. The model learns to predict text <em>between and around</em> fixed keywords. At inference, keywords and generated segments are recombined.</p>
+</div>
+
+<!-- ===== SLIDE 6: Approach — Method Diagram ===== -->
+<div class="slide" data-idx="5">
+  <div class="slide-number">6 / 10</div>
+  <h2>Approach</h2>
+
+  <svg viewBox="0 0 960 420" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-height:55vh;margin:0 auto;display:block;">
+    <defs>
+      <marker id="arrowGold" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+        <path d="M0,0 L8,3 L0,6" fill="#b8860b"/>
+      </marker>
+      <marker id="arrowGreen" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+        <path d="M0,0 L8,3 L0,6" fill="#2e7d32"/>
+      </marker>
+      <linearGradient id="encGrad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#e3ecf7"/><stop offset="100%" stop-color="#d6e4f5"/>
+      </linearGradient>
+      <linearGradient id="decGrad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#e0f2e5"/><stop offset="100%" stop-color="#d0ebd8"/>
+      </linearGradient>
+    </defs>
+
+    <!-- ── USER INPUT ── -->
+    <rect x="10" y="30" width="150" height="70" rx="10" fill="#f4f5f7" stroke="#b8860b" stroke-width="1.5"/>
+    <text x="85" y="52" text-anchor="middle" fill="#b8860b" font-family="JetBrains Mono,monospace" font-size="10" letter-spacing="1.5">USER INPUT</text>
+    <text x="85" y="74" text-anchor="middle" fill="#111" font-family="Source Sans 3,sans-serif" font-size="13" font-weight="600">sunshine, sorrow</text>
+    <text x="85" y="90" text-anchor="middle" fill="#999" font-family="Source Sans 3,sans-serif" font-size="10">(阳光, 哀伤)</text>
+
+    <!-- Arrow: input → format -->
+    <line x1="160" y1="65" x2="193" y2="65" stroke="#b8860b" stroke-width="1.5" marker-end="url(#arrowGold)"/>
+
+    <!-- ── FORMAT ── -->
+    <rect x="200" y="22" width="200" height="86" rx="10" fill="#f8f0ff" stroke="#7b1fa2" stroke-width="1.5"/>
+    <text x="300" y="44" text-anchor="middle" fill="#7b1fa2" font-family="JetBrains Mono,monospace" font-size="10" letter-spacing="1.5">FORMAT + TOKENIZE</text>
+    <text x="300" y="68" text-anchor="middle" fill="#666" font-family="JetBrains Mono,monospace" font-size="12">trigger:</text>
+    <text x="300" y="86" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="13">
+      <tspan fill="#1565c0">&lt;a&gt;</tspan><tspan fill="#b8860b">sunshine</tspan><tspan fill="#7b1fa2">&lt;b&gt;</tspan><tspan fill="#b8860b">sorrow</tspan><tspan fill="#2e7d32">&lt;c&gt;</tspan>
+    </text>
+    <text x="300" y="102" text-anchor="middle" fill="#888" font-family="Source Sans 3,sans-serif" font-size="10">+ add special tokens to vocabulary</text>
+
+    <!-- Arrow: format → encoder -->
+    <line x1="400" y1="65" x2="433" y2="65" stroke="#b8860b" stroke-width="1.5" marker-end="url(#arrowGold)"/>
+
+    <!-- ══════ mT5 MODEL BOX ══════ -->
+    <rect x="440" y="8" width="290" height="260" rx="14" fill="none" stroke="#b8860b" stroke-width="1" stroke-dasharray="6,4" opacity="0.5"/>
+    <text x="585" y="26" text-anchor="middle" fill="#b8860b" font-family="DM Serif Display,serif" font-size="13">mT5-small (300M)</text>
+
+    <!-- Encoder -->
+    <rect x="460" y="38" width="250" height="80" rx="10" fill="url(#encGrad)" stroke="#1565c0" stroke-width="1.5"/>
+    <text x="585" y="62" text-anchor="middle" fill="#1565c0" font-family="JetBrains Mono,monospace" font-size="10" letter-spacing="1">ENCODER</text>
+    <text x="585" y="82" text-anchor="middle" fill="#222" font-family="Source Sans 3,sans-serif" font-size="13">Self-Attention Layers</text>
+    <text x="585" y="100" text-anchor="middle" fill="#666" font-family="Source Sans 3,sans-serif" font-size="10">Encodes keywords + structure</text>
+
+    <!-- Arrow: encoder → decoder (vertical) -->
+    <line x1="585" y1="118" x2="585" y2="148" stroke="#b8860b" stroke-width="1.5" marker-end="url(#arrowGold)"/>
+    <text x="605" y="139" fill="#888" font-family="Source Sans 3,sans-serif" font-size="10">hidden states</text>
+
+    <!-- Decoder -->
+    <rect x="460" y="155" width="250" height="95" rx="10" fill="url(#decGrad)" stroke="#2e7d32" stroke-width="1.5"/>
+    <text x="585" y="178" text-anchor="middle" fill="#2e7d32" font-family="JetBrains Mono,monospace" font-size="10" letter-spacing="1">DECODER</text>
+    <text x="585" y="198" text-anchor="middle" fill="#222" font-family="Source Sans 3,sans-serif" font-size="13">Cross-Attention + Autoregressive</text>
+    <text x="585" y="216" text-anchor="middle" fill="#666" font-family="Source Sans 3,sans-serif" font-size="10">Beam Search (10 beams)</text>
+    <text x="585" y="234" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="12">
+      <tspan fill="#1565c0">&lt;a&gt;</tspan><tspan fill="#2e7d32">falls on</tspan><tspan fill="#7b1fa2">&lt;b&gt;</tspan><tspan fill="#2e7d32">'s face</tspan><tspan fill="#2e7d32">&lt;c&gt;</tspan>
+    </text>
+
+    <!-- Arrow: decoder → post-process -->
+    <line x1="710" y1="202" x2="743" y2="202" stroke="#2e7d32" stroke-width="1.5" marker-end="url(#arrowGreen)"/>
+
+    <!-- ── POST-PROCESS ── -->
+    <rect x="735" y="155" width="225" height="95" rx="10" fill="#f4f5f7" stroke="#2e7d32" stroke-width="1.5"/>
+    <text x="848" y="178" text-anchor="middle" fill="#2e7d32" font-family="JetBrains Mono,monospace" font-size="10" letter-spacing="1.5">RECOMBINE</text>
+    <text x="848" y="198" text-anchor="middle" fill="#666" font-family="Source Sans 3,sans-serif" font-size="10">Interleave segments + keywords</text>
+    <text x="848" y="220" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="10">
+      <tspan fill="#b8860b">sunshine</tspan><tspan fill="#2e7d32"> falls on </tspan><tspan fill="#b8860b">sorrow</tspan><tspan fill="#2e7d32">'s face</tspan>
+    </text>
+    <text x="848" y="240" text-anchor="middle" fill="#888" font-family="Source Sans 3,sans-serif" font-size="10">regex extraction + merge</text>
+
+    <!-- Arrow: post-process → output -->
+    <line x1="848" y1="250" x2="848" y2="280" stroke="#2e7d32" stroke-width="1.5" marker-end="url(#arrowGreen)"/>
+
+    <!-- ── FINAL OUTPUT ── -->
+    <rect x="735" y="286" width="220" height="60" rx="10" fill="#e8f5e9" stroke="#2e7d32" stroke-width="2"/>
+    <text x="845" y="308" text-anchor="middle" fill="#2e7d32" font-family="JetBrains Mono,monospace" font-size="10" letter-spacing="1.5">OUTPUT</text>
+    <text x="845" y="328" text-anchor="middle" fill="#111" font-family="Source Sans 3,sans-serif" font-size="15" font-weight="600">"Sunshine falls on sorrow's face"</text>
+    <text x="845" y="344" text-anchor="middle" fill="#999" font-family="Source Sans 3,sans-serif" font-size="10">阳光洒在哀伤的脸上</text>
+
+    <!-- ── TRAINING CONTEXT (bottom-left) ── -->
+    <rect x="10" y="290" width="360" height="120" rx="10" fill="#fafafa" stroke="#ddd" stroke-width="1"/>
+    <text x="30" y="314" fill="#b8860b" font-family="JetBrains Mono,monospace" font-size="10" letter-spacing="1.5">TRAINING</text>
+    <text x="30" y="336" fill="#222" font-family="Source Sans 3,sans-serif" font-size="13">
+      <tspan font-weight="600">Loss:</tspan><tspan fill="#666"> Cross-entropy on decoder output</tspan>
+    </text>
+    <text x="30" y="356" fill="#222" font-family="Source Sans 3,sans-serif" font-size="13">
+      <tspan font-weight="600">Optimizer:</tspan><tspan fill="#666"> AdamW, lr=1e-5, wd=0.01</tspan>
+    </text>
+    <text x="30" y="376" fill="#222" font-family="Source Sans 3,sans-serif" font-size="13">
+      <tspan font-weight="600">Epochs:</tspan><tspan fill="#666"> ~30 on 4× V100 (~1.5 days)</tspan>
+    </text>
+    <text x="30" y="396" fill="#222" font-family="Source Sans 3,sans-serif" font-size="13">
+      <tspan font-weight="600">Data:</tspan><tspan fill="#666"> 983K auto-constructed (src, tgt) pairs</tspan>
+    </text>
+
+    <!-- ── KEY INSIGHT callout ── -->
+    <rect x="395" y="290" width="320" height="120" rx="10" fill="#fdf8eb" stroke="#e0d5b0" stroke-width="1"/>
+    <text x="415" y="314" fill="#b8860b" font-family="JetBrains Mono,monospace" font-size="10" letter-spacing="1.5">KEY INSIGHT</text>
+    <text x="415" y="336" fill="#222" font-family="Source Sans 3,sans-serif" font-size="13">Our span infilling formulation mirrors</text>
+    <text x="415" y="356" fill="#222" font-family="Source Sans 3,sans-serif" font-size="13">T5's <tspan font-weight="700" fill="#b8860b">span corruption pre-training</tspan>:</text>
+    <text x="415" y="380" fill="#666" font-family="Source Sans 3,sans-serif" font-size="12">Pre-train:  The &lt;X&gt; walks in &lt;Y&gt; park → cat, the</text>
+    <text x="415" y="398" fill="#666" font-family="Source Sans 3,sans-serif" font-size="12">Ours:       &lt;a&gt;sunshine&lt;b&gt;sorrow&lt;c&gt; → falls on, 's face</text>
+  </svg>
+
+  <p class="dim" style="font-size:16px;text-align:center;margin-top:12px;">The encoder reads keyword-structured input; the decoder generates text segments to fill around the keywords; post-processing merges them into the final lyric.</p>
+</div>
+
+<!-- ===== SLIDE 7: Results ===== -->
+<div class="slide" data-idx="6">
+  <div class="slide-number">7 / 10</div>
+  <h2>Results</h2>
+
+  <p style="margin-bottom:8px;">No single ground truth for open-ended generation &rarr; evaluate <strong>fluency</strong> via <span class="highlight">Perplexity (PPL)</span> from an independent Chinese GPT-2 (<code>uer/gpt2-chinese-cluecorpussmall</code>). Lower PPL = more fluent.</p>
+
+  <div class="two-col" style="margin-top:16px;">
+    <div>
+      <h3>Baseline Comparison</h3>
+      <table>
+        <tr><th>Method</th><th>Mean PPL &darr;</th><th>Median PPL &darr;</th><th>% &lt; 80</th></tr>
+        <tr style="color:var(--red);"><td>Random Shuffle</td><td>2,988</td><td>2,463</td><td>0.1%</td></tr>
+        <tr style="color:var(--text-dim);"><td>Ground Truth Lyrics</td><td>274</td><td>136</td><td>30.2%</td></tr>
+        <tr style="color:var(--green);font-weight:600;"><td>K-Lyric (Ours)</td><td>92</td><td>54</td><td>67.7%</td></tr>
+      </table>
+      <p class="dim" style="font-size:14px;margin-top:12px;"><strong>Random Shuffle</strong> = characters of ground truth randomly reordered (lower bound).<br>
+      <strong>Ground Truth</strong> = original lyrics from test set (reference).</p>
+
+      <div class="key-insight" style="margin-top:16px;">
+        <p>K-Lyric achieves <span class="highlight">lower PPL than ground truth lyrics</span>. This suggests our model favors safe, common phrasings &mdash; fluent but potentially less creative than real lyrics. Real song lyrics use unusual, poetic word combinations that GPT-2 rates as higher perplexity.</p>
+      </div>
+    </div>
+    <div>
+      <h3>PPL Distribution (10K test samples)</h3>
+      <div class="bar-chart">
+        <div class="bar-row"><div class="bar-label">&lt; 20</div><div class="bar-track"><div class="bar-fill" style="width:38.7%;background:var(--green);">10.3%</div></div></div>
+        <div class="bar-row"><div class="bar-label">20 &ndash; 40</div><div class="bar-track"><div class="bar-fill" style="width:100%;background:var(--green);">26.6%</div></div></div>
+        <div class="bar-row"><div class="bar-label">40 &ndash; 60</div><div class="bar-track"><div class="bar-fill" style="width:66.7%;background:var(--blue);">17.7%</div></div></div>
+        <div class="bar-row"><div class="bar-label">60 &ndash; 80</div><div class="bar-track"><div class="bar-fill" style="width:49.3%;background:var(--blue);">13.1%</div></div></div>
+        <div class="bar-row"><div class="bar-label">80 &ndash; 100</div><div class="bar-track"><div class="bar-fill" style="width:29.2%;background:var(--purple);">7.8%</div></div></div>
+        <div class="bar-row"><div class="bar-label">100 &ndash; 150</div><div class="bar-track"><div class="bar-fill" style="width:40.4%;background:var(--purple);">10.7%</div></div></div>
+        <div class="bar-row"><div class="bar-label">150 &ndash; 200</div><div class="bar-track"><div class="bar-fill" style="width:19.3%;background:var(--red);">5.1%</div></div></div>
+        <div class="bar-row"><div class="bar-label">&gt; 200</div><div class="bar-track"><div class="bar-fill" style="width:32.4%;background:var(--red);">8.7%</div></div></div>
+      </div>
+
+      <div class="stat-grid" style="grid-template-columns: 1fr 1fr; margin-top:16px;">
+        <div class="stat-card">
+          <div class="stat-num">100%</div>
+          <div class="stat-label">Keyword Fidelity</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num">10,035</div>
+          <div class="stat-label">Test Samples</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== SLIDE 8: Analysis ===== -->
+<div class="slide" data-idx="7">
+  <div class="slide-number">8 / 10</div>
+  <h2>Analysis</h2>
+
+  <div class="two-col">
+    <div>
+      <h3 style="color:var(--green);">Successful Generations</h3>
+      <div class="example-box">
+        <div class="dim" style="font-size:12px;margin-bottom:6px;">Keywords &rarr; Generated Lyric &emsp; PPL</div>
+        <p style="margin:5px 0;"><span class="kw">take away, smile</span> &rarr; "Took away your smile" <span class="dim">(43)</span></p>
+        <p style="margin:5px 0;"><span class="kw">time, butterfly</span> &rarr; "Time flies like a butterfly" <span class="dim">(26)</span></p>
+        <p style="margin:5px 0;"><span class="kw">hope, have</span> &rarr; "Hope you can have me" <span class="dim">(24)</span></p>
+        <p style="margin:5px 0;"><span class="kw">atmosphere</span> &rarr; "Let this atmosphere become gentler" <span class="dim">(54)</span></p>
+      </div>
+
+      <h3 style="color:var(--red);margin-top:16px;">Failure Cases</h3>
+      <div class="example-box">
+        <p style="margin:5px 0;"><span class="kw">circle</span> &rarr; "circle circle circle..." <span class="dim red">(2.6)</span></p>
+        <p style="margin:5px 0;"><span class="kw">lyricist, Jian Ling</span> &rarr; "Lyricist Jian Ling Zheng Bingbing" <span class="dim red">(3078)</span></p>
+      </div>
+    </div>
+    <div>
+      <h3>Failure Patterns</h3>
+      <ul>
+        <li><span class="red">Repetition:</span> model repeats keyword endlessly (low PPL but meaningless)</li>
+        <li><span class="red">Rare vocabulary:</span> archaic words yield incoherent output</li>
+        <li><span class="red">Metadata leakage:</span> generates artist names from training noise</li>
+      </ul>
+
+      <div class="key-insight" style="margin-top:20px;padding:20px 24px;">
+        <p style="font-size:17px;"><strong>Fluency vs. Creativity:</strong> Our model scores <em>lower PPL than real lyrics</em> (54 vs 136). This reveals a tradeoff &mdash; the model favors safe, common phrasings, while real songwriters use unusual poetic combinations that GPT-2 rates as less predictable. <span class="highlight">PPL measures fluency, not quality.</span></p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== SLIDE 9: Conclusions ===== -->
+<div class="slide" data-idx="8">
+  <div class="slide-number">9 / 10</div>
+  <h2>Conclusions</h2>
+
+  <div class="two-col">
+    <div>
+      <h3>What We Showed</h3>
+      <ul>
+        <li><span class="highlight">100% keyword fidelity</span> by construction</li>
+        <li>Median PPL 54 vs. 136 for real lyrics &mdash; strong fluency</li>
+        <li><span class="highlight">Zero human annotation</span> &mdash; fully automatic data pipeline</li>
+      </ul>
+
+      <h3 style="margin-top:24px;">Limitations</h3>
+      <ul>
+        <li>Repetition degeneration on common keywords</li>
+        <li>Poor results on rare / classical vocabulary</li>
+        <li>Training stopped early (~30 epochs); loss still decreasing</li>
+        <li>No human evaluation &mdash; only automatic PPL</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Future Work</h3>
+      <ul>
+        <li>Scale to larger mT5 variants (base, large)</li>
+        <li>Contrastive decoding to reduce repetition</li>
+        <li>Multi-line generation (full verses)</li>
+        <li>Human evaluation on fluency, creativity, relevance</li>
+        <li>Compare against constrained decoding baselines</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ===== SLIDE 10: References ===== -->
+<div class="slide" data-idx="9">
+  <div class="slide-number">10 / 10</div>
+  <h2>References</h2>
+
+  <div style="max-width:850px;">
+    <div class="ref">[1] Xue, L., et al. (2021). <strong>mT5: A Massively Multilingual Pre-trained Text-to-Text Transformer.</strong> NAACL 2021. <a href="https://arxiv.org/abs/2010.11934">arXiv:2010.11934</a></div>
+    <div class="ref">[2] Raffel, C., et al. (2020). <strong>Exploring the Limits of Transfer Learning with a Unified Text-to-Text Transformer.</strong> JMLR. <a href="https://arxiv.org/abs/1910.10683">arXiv:1910.10683</a></div>
+    <div class="ref">[3] Hokamp, C. &amp; Liu, Q. (2017). <strong>Lexically Constrained Decoding for Sequence Generation Using Grid Beam Search.</strong> ACL 2017. <a href="https://arxiv.org/abs/1704.07138">arXiv:1704.07138</a></div>
+    <div class="ref">[4] Lu, X., et al. (2021). <strong>NeuroLogic Decoding: (Un)supervised Neural Text Generation with Predicate Logic Constraints.</strong> NAACL 2021. <a href="https://arxiv.org/abs/2010.12884">arXiv:2010.12884</a></div>
+    <div class="ref">[5] Donahue, C., Lee, M., Liang, P. (2020). <strong>Enabling Language Models to Fill in the Blanks.</strong> ACL 2020. <a href="https://arxiv.org/abs/2005.05339">arXiv:2005.05339</a></div>
+    <div class="ref">[6] Mihalcea, R. &amp; Tarau, P. (2004). <strong>TextRank: Bringing Order into Text.</strong> EMNLP 2004.</div>
+    <div class="ref">[7] Deng, X. (2020). <strong>ChineseLyrics Dataset.</strong> <a href="https://github.com/dengxiuqi/ChineseLyrics">github.com/dengxiuqi/ChineseLyrics</a></div>
+    <div class="ref">[8] Zhao, Z., et al. (2019). <strong>UER: An Open-Source Toolkit for Pre-training Models.</strong> <a href="https://github.com/dbiir/UER-py">github.com/dbiir/UER-py</a></div>
+  </div>
+</div>
+
+<!-- Navigation -->
+<div class="nav">
+  <button id="prevBtn" onclick="changeSlide(-1)">&larr;</button>
+  <div class="dots" id="dots"></div>
+  <div class="counter" id="counter">1 / 10</div>
+  <button id="nextBtn" onclick="changeSlide(1)">&rarr;</button>
+</div>
+
+<script>
+const slides = document.querySelectorAll('.slide');
+let current = 0;
+const total = slides.length;
+
+const dotsEl = document.getElementById('dots');
+for (let i = 0; i < total; i++) {
+  const dot = document.createElement('div');
+  dot.className = 'dot' + (i === 0 ? ' active' : '');
+  dot.onclick = () => goTo(i);
+  dotsEl.appendChild(dot);
+}
+
+function goTo(idx) {
+  if (idx === current || idx < 0 || idx >= total) return;
+  const old = current;
+  slides[old].classList.remove('active');
+  slides[old].classList.add('exiting');
+  setTimeout(() => slides[old].classList.remove('exiting'), 500);
+  current = idx;
+  slides[current].classList.add('active');
+  document.querySelectorAll('.dot').forEach((d, i) => d.classList.toggle('active', i === current));
+  document.getElementById('counter').textContent = (current + 1) + ' / ' + total;
+  document.getElementById('prevBtn').disabled = current === 0;
+  document.getElementById('nextBtn').disabled = current === total - 1;
+}
+
+function changeSlide(dir) { goTo(current + dir); }
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); changeSlide(1); }
+  if (e.key === 'ArrowLeft') { e.preventDefault(); changeSlide(-1); }
+});
+
+document.getElementById('prevBtn').disabled = true;
+</script>
+</body>
+</html>
